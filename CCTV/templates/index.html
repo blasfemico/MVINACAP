@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Control CCTV</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <script>
+        document.addEventListener("DOMContentLoaded", function () {
+            // Muestra alertas en función de los mensajes flash
+            {% with messages = get_flashed_messages(with_categories = true) %}
+            {% if messages %}
+            {% for category, message in messages %}
+            alert("{{ message }}");
+            {% endfor %}
+            {% endif %}
+            {% endwith %}
+        });
+    </script>
+</head>
+
+<body>
+    <div class="container">
+        <h1>CCTV</h1>
+        <!-- Stream de video en vivo -->
+        <div>
+            <h2>Cámara en Vivo</h2>
+            <img id="video" src="{{ url_for('video_feed') }}" alt="Cámara en vivo">
+        </div>
+        <button onclick="captureImage()">Capturar</button>
+        <script>
+            function captureImage() {
+                fetch('/capture')
+                    .then(response => {
+                        if (response.ok) {
+                            alert("Imagen capturada con éxito.");
+                        } else {
+                            alert("Error al capturar la imagen.");
+                        }
+                    })
+                    .catch(error => {
+                        console.error("Error:", error);
+                    });
+            }
+        </script>
+
+        <!-- Formulario para agregar miembros al archivo Excel -->
+        <div class="form-container">
+            <h2>Agregar Miembro</h2>
+            <form action="{{ url_for('agregar_miembro') }}" method="POST" enctype="multipart/form-data">
+                <label for="name">Nombre:</label>
+                <input type="text" id="name" name="name" required>
+
+                <label for="rut">RUT (formato: xx.xxx.xxx-x):</label>
+                <input type="text" id="rut" name="rut" pattern="\d{2}\.\d{3}\.\d{3}-\d{1}"
+                    title="Debe seguir el formato xx.xxx.xxx-x" required>
+
+                <label for="foto">Foto:</label>
+                <input type="file" id="foto" name="foto" accept="image/*" required>
+
+                <label for="patente">Patente:</label>
+                <input type="text" id="patente" name="patente" required>
+
+                <label for="vehiculo">Vehículo:</label>
+                <select id="vehiculo" name="vehiculo" required>
+                    <option value="Moto">Moto</option>
+                    <option value="Auto">Auto</option>
+                    <option value="Bicicleta">Bicicleta</option>
+                </select>
+
+                <center><input type="submit" value="Agregar"></center>
+            </form>
+        </div>
+
+        <!-- Tabla para mostrar los registros actuales -->
+        <div class="table-container">
+            <h2>Miembros Registrados</h2>
+            <table>
+                <tr>
+                    <th>Nombre</th>
+                    <th>RUT</th>
+                    <th>Foto</th>
+                    <th>Patente</th>
+                    <th>Hora Entrada</th>
+                    <th>Hora Salida</th>
+                    <th>Vehículo</th>
+                    <th>Acciones</th>
+                </tr>
+                {% for row in registros %}
+                <tr>
+                    <td>{{ row[0] }}</td>
+                    <td>{{ row[1] }}</td>
+                    <td><img src="/{{ row[2] }}" alt="Foto" class="foto"></td>
+                    <td>{{ row[3] }}</td>
+                    <td>{{ row[4] }}</td>
+                    <td>{{ row[5] }}</td>
+                    <td>{{ row[6] }}</td>
+                    <td>
+                        <a href="{{ url_for('editar_miembro', rut=row[1]) }}">Editar</a> |
+                        <a href="{{ url_for('eliminar_miembro', rut=row[1]) }}"
+                            onclick="return confirm('¿Está seguro de que desea eliminar este registro?')">Eliminar</a>
+                    </td>
+                </tr>
+                {% endfor %}
+            </table>
+        </div>
+    </div>
+</body>
+
+</html>

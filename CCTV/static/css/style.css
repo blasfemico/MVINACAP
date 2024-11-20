@@ -1,0 +1,100 @@
+body {
+    font-family: Arial, sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+h2 {
+    margin-top: 20px;
+}
+
+.container {
+    margin-top: 20px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+#video {
+    border: 2px solid black;
+    width: 80%;
+    max-width: 640px;
+    height: auto;
+}
+
+.form-container,
+.table-container {
+    margin-top: 20px;
+    text-align: center;
+}
+
+table {
+    border-collapse: collapse;
+    width: 80%;
+    margin-top: 20px;
+}
+
+th,
+td {
+    border: 1px solid #ddd;
+    padding: 8px;
+    text-align: left;
+}
+
+th {
+    background-color: #f2f2f2;
+}
+
+label {
+    display: block;
+    margin: 5px 0;
+}
+
+form label {
+    display: block;
+    margin-top: 10px;
+}
+
+input[type="text"],
+input[type="file"] {
+    width: 100%;
+    padding: 5px;
+    margin: 5px 0;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+}
+
+input[type="submit"] {
+    background-color: #4CAF50;
+    color: white;
+    padding: 10px 20px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    width: auto;
+}
+
+input[type="submit"]:hover {
+    background-color: #45a049;
+}
+
+.foto {
+    width: 100px;
+    height: auto;
+}
+
+
+.form-container input[type="submit"] {
+    margin-top: 10px;
+    /* Añade margen superior para separar el botón del select */
+}
+
+.form-container {
+    display: flex;
+    /* Asegura que los elementos dentro se alineen verticalmente */
+    flex-direction: column;
+    /* Los elementos dentro de .form-container estarán en una columna */
+    align-items: center;
+    /* Centra los elementos dentro de .form-container */
+}
