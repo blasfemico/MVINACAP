@@ -8,12 +8,11 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     <script>
         document.addEventListener("DOMContentLoaded", function () {
-            // Muestra alertas en función de los mensajes flash
-            {% with messages = get_flashed_messages(with_categories = true) %}
+            {% with messages = get_flashed_messages(with_categories=true) %}
             {% if messages %}
-            {% for category, message in messages %}
-            alert("{{ message }}");
-            {% endfor %}
+                {% for category, message in messages %}
+                    alert("{{ message }}");
+                {% endfor %}
             {% endif %}
             {% endwith %}
         });
@@ -23,11 +22,24 @@
 <body>
     <div class="container">
         <h1>CCTV</h1>
-        <!-- Stream de video en vivo -->
+
+        <!-- Streams de video en vivo -->
         <div>
-            <h2>Cámara en Vivo</h2>
-            <img id="video" src="{{ url_for('video_feed') }}" alt="Cámara en vivo">
+            <h2>Cámaras en Vivo</h2>
+            {% if cantidad_camaras > 0 %}
+                {% for i in range(cantidad_camaras) %}
+                <div class="camera-container">
+                    <h3>Cámara {{ i }}</h3>
+                    <img id="video{{ i }}" src="{{ url_for('video_feed', cam_index=i) }}" alt="Cámara {{ i }}">
+                </div>
+                {% endfor %}
+            {% else %}
+                <p>No hay cámaras disponibles.</p>
+            {% endif %}
         </div>
+        
+
+        <!-- Botón para capturar imágenes -->
         <button onclick="captureImage()">Capturar</button>
         <script>
             function captureImage() {

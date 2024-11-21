@@ -1,322 +1,181 @@
+import os
 import time
 import re
 from datetime import datetime
 from typing import List, Generator
-import os
-from flask import (
-    Flask,
-    render_template,
-    Response,
-    request,
-    redirect,
-    url_for,
-    jsonify,
-    send_from_directory,
-    flash,
-)
 import cv2
 import easyocr
-import openpyxl
 import requests
-from openpyxl import load_workbook
+from flask import Flask, render_template, Response, request, redirect, url_for, jsonify, flash
+from openpyxl import Workbook, load_workbook
 import pytesseract
 
+class SistemaGestion:
+    def __init__(self):
+        self.excel_file = "registro_miembros.xlsx"
+        self.upload_folder = "temp/"
+        self.esp32_motor_url = "http://192.168.100.49/motor"
+        self.camaras = []
+        self.latest_frames = []
+        self.capturing = []
+        self.reader = easyocr.Reader(["en"])
+        self.setup()
 
-EXCEL_FILE = "registro_miembros.xlsx"
-UPLOAD_FOLDER = "temp/"
-ESP32_IP = "http://192.168.100.49/motor"
-CAP = cv2.VideoCapture(1)
-LATEST_FRAME = None
-CAPTURING = False
+    
+    def setup(self):
+        if not os.path.exists(self.upload_folder):
+            os.makedirs(self.upload_folder)
+        if not os.path.exists(self.excel_file):
+            workbook = Workbook()
+            sheet = workbook.active
+            sheet.append(["Nombre", "RUT", "Foto", "Patente", "Hora Entrada", "Hora Salida", "Vehiculo"])
+            workbook.save(self.excel_file)
+        pytesseract.pytesseract.tesseract_cmd = (
+            "/usr/bin/tesseract" if os.name == "posix" else "C:/Program Files (x86)/Tesseract-OCR/tesseract.exe"
+        )
+        self.inicializar_camaras()
 
+    def control_motor(self, motor_id):
+        response = requests.get(f"{self.esp32_motor_url}/{motor_id}")
+        response.raise_for_status()
+
+    def capturar_frame(self, cam_index):
+        if cam_index < len(self.camaras) and not self.capturing[cam_index]:
+            success, frame = self.camaras[cam_index].read()
+            if success:
+                self.latest_frames[cam_index] = frame
+
+    
+    def video_feed(self, cam_index) -> Generator[bytes, None, None]:
+        while True:
+            if cam_index < len(self.camaras):
+                self.capturar_frame(cam_index)
+                if self.latest_frames[cam_index] is not None:
+                    _, buffer = cv2.imencode(".jpg", self.latest_frames[cam_index])
+                    yield b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + buffer.tobytes() + b"\r\n"
+            else:
+                yield b"--frame\r\nContent-Type: image/jpeg\r\n\r\n"
+    
+    def inicializar_camaras(self):
+        for index in range(3):  
+            cam = cv2.VideoCapture(index)
+            if cam.isOpened():
+                self.camaras.append(cam)
+                self.latest_frames.append(None)
+                self.capturing.append(False)
+                print(f"Cámara {index} inicializada correctamente.")
+            else:
+                print(f"Advertencia: No se pudo inicializar la cámara {index}. Ignorando...")
+        if not self.camaras:
+            print("No se encontraron cámaras disponibles.")
+
+
+    def detectar_matricula(self, imagen):
+        img = cv2.imread(imagen)
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+        edges = cv2.Canny(blurred, 50, 150)
+        contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        matriculas = [cv2.approxPolyDP(c, 0.02 * cv2.arcLength(c, True), True) for c in contours if cv2.contourArea(c) > 10000]
+        return [m for m in matriculas if len(m) == 4]
+
+    def guardar_matriculas(self, imagen, matriculas):
+        img = cv2.imread(imagen)
+        return [
+            f"{self.upload_folder}matricula_{i + 1}.jpg" 
+            for i, m in enumerate(matriculas)
+            if cv2.imwrite(f"{self.upload_folder}matricula_{i + 1}.jpg", img[cv2.boundingRect(m)[1]:cv2.boundingRect(m)[1] + cv2.boundingRect(m)[3], cv2.boundingRect(m)[0]:cv2.boundingRect(m)[0] + cv2.boundingRect(m)[2]])
+        ]
+
+    def leer_matricula(self, image_path):
+        if not os.path.exists(image_path):
+            return ""
+        result = self.reader.readtext(cv2.cvtColor(cv2.imread(image_path), cv2.COLOR_BGR2RGB))
+        return next((re.sub(r"[^A-Za-z0-9]", "", text) for _, text, prob in result if prob > 0.55), "")
+
+    def registrar_entrada(self, nombre, rut, foto, patente_input, vehiculo):
+        foto_filename = os.path.join("fotos/", f"{rut}_foto.jpg")
+        foto.save(foto_filename)
+        matriculas = self.detectar_matricula(foto_filename)
+        if matriculas:
+            matricula_procesada = self.leer_matricula(self.guardar_matriculas(foto_filename, matriculas)[0])
+            if matricula_procesada == patente_input:
+                hora_entrada = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                workbook = load_workbook(self.excel_file)
+                sheet = workbook.active
+                sheet.append([nombre, rut, foto_filename, matricula_procesada, hora_entrada, None, vehiculo])
+                workbook.save(self.excel_file)
+                self.control_motor(1)
+
+    def registrar_salida(self, rut):
+        workbook = load_workbook(self.excel_file)
+        sheet = workbook.active
+        for row in sheet.iter_rows(min_row=2):
+            if row[1].value == rut and not row[5].value:
+                row[5].value = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                workbook.save(self.excel_file)
+                self.control_motor(2)
+                break
+
+    def sensor_entrada(self):
+        self.control_motor(3)
+
+    def sensor_salida(self):
+        self.control_motor(4)
+
+    def obtener_registros(self):
+        registros = []
+        if os.path.exists(self.excel_file):
+            workbook = load_workbook(self.excel_file)
+            sheet = workbook.active
+            for row in sheet.iter_rows(min_row=2, values_only=True):  
+                registros.append(row)
+        else:
+            print("Advertencia: El archivo de registros no existe.")
+        return registros
+    
 app = Flask(__name__)
 app.secret_key = os.urandom(24)
+sistema = SistemaGestion()
 
-if os.name == "posix":
-    pytesseract.pytesseract.tesseract_cmd = "/usr/bin/tesseract"
-elif os.name == "nt":
-    pytesseract.pytesseract.tesseract_cmd = (
-        "C:/Program Files (x86)/Tesseract-OCR/tesseract.exe"
-    )
-
-try:
-    os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-    print(f"Directorio '{UPLOAD_FOLDER}' creado o ya existe.")
-except OSError as e:
-    print(f"Error al crear el directorio '{UPLOAD_FOLDER}': {e}")
-
-if not os.path.exists(EXCEL_FILE):
-    workbook = openpyxl.Workbook()
-    sheet = workbook.active
-    sheet.append(
-        ["Nombre", "RUT", "Foto", "Patente", "Hora Entrada", "Hora Salida", "Vehiculo"]
-    )
-    workbook.save(EXCEL_FILE)
-
-
-@app.route("/control_motor", methods=["POST"])
-def control_motor():
-    try:
-        response = requests.get(ESP32_IP)
-        response.raise_for_status()
-        return jsonify({"message": "Motor controlado exitosamente"}), 200
-    except requests.exceptions.ConnectionError:
-        return (
-            jsonify(
-                {
-                    "error": "No se pudo conectar al ESP32. Verifica la dirección IP y la conexión."
-                }
-            ),
-            503,
-        )
-    except requests.exceptions.Timeout:
-        return (
-            jsonify(
-                {"error": "La solicitud al ESP32 ha excedido el tiempo de espera."}
-            ),
-            504,
-        )
-    except requests.exceptions.RequestException as e:
-        return (
-            jsonify(
-                {"error": f"Ocurrió un error al comunicarse con el ESP32: {str(e)}"}
-            ),
-            500,
-        )
-
-
-def detectar_matricula(imagen) -> List[str]:
-    img = cv2.imread(imagen)
-    if img is None:
-        print(f"Error: No se pudo abrir la imagen en la ruta especificada: {imagen}")
-        return []
-    cv2.imwrite("output/image_original.jpg", img)
-    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    cv2.imwrite("output/image_gray.jpg", gray)
-    blurred = cv2.GaussianBlur(gray, (5, 5), 0)
-    cv2.imwrite("output/image_blurred.jpg", blurred)
-    edges = cv2.Canny(blurred, 50, 150)
-    cv2.imwrite("output/image_edges.jpg", edges)
-    contours, _ = cv2.findContours(
-        edges.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
-    )
-    matriculas = []
-    for contour in contours:
-        area = cv2.contourArea(contour)
-        if area > 10000:
-            peri = cv2.arcLength(contour, True)
-            approx = cv2.approxPolyDP(contour, 0.02 * peri, True)
-            if len(approx) == 4:
-                matriculas.append(approx)
-                cv2.drawContours(img, [approx], -1, (0, 255, 0), 3)
-    cv2.imwrite("output/image_contours.jpg", img)
-    return matriculas
-
-
-def guardar_matriculas(imagen, matriculas) -> List[str]:
-    img = cv2.imread(imagen)
-    rutas_matriculas = []
-    for i, matricula in enumerate(matriculas):
-        x, y, w, h = cv2.boundingRect(matricula)
-        matricula_recortada = img[y : y + h, x : x + w]
-        ruta = f"{UPLOAD_FOLDER}matricula_{i+1}.jpg"
-        cv2.imwrite(ruta, matricula_recortada)
-        rutas_matriculas.append(ruta)
-    return rutas_matriculas
-
-
-def leer_matricula(image_path) -> str:
-    reader = easyocr.Reader(["en"])
-    if not os.path.exists(image_path):
-        print(f"Error: No se encontró la imagen en la ruta especificada: {image_path}")
-        return ""
-    image = cv2.imread(image_path)
-    if image is None:
-        print(
-            f"Error: No se pudo abrir la imagen en la ruta especificada: {image_path}"
-        )
-        return ""
-    image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-    result = reader.readtext(image_rgb)
-    matricula = ""
-    for bbox, text, prob in result:
-        print(f"Detectado: {text} con una probabilidad de {prob:.2f}")
-        if matricula == "" or prob > 0.55:
-            matricula = text
-    print(f"Matrícula: {matricula}")
-    return matricula
-
-
-def limpiar_matricula(matricula) -> str:
-    matricula_limpia = re.sub(r"[^A-Za-z0-9]", "", matricula)
-    return matricula_limpia
-
-
-def gen_frames() -> Generator[bytes, None, None]:
-    global CAP, LATEST_FRAME, CAPTURING
-    while True:
-        while CAPTURING:
-            time.sleep(0.1)
-
-        if not CAP.isOpened():
-            print("Reconectando a la cámara...")
-            CAP.release()
-            CAP.open(URL)
-
-        success, frame = CAP.read()
-        if not success:
-            print("Error: No se pudo capturar la imagen.")
-            time.sleep(2)
-            continue
-
-        LATEST_FRAME = frame
-
-        _, buffer = cv2.imencode(".jpg", LATEST_FRAME)
-        frame_bytes = buffer.tobytes()
-        yield (
-            b"--frame\r\n" b"Content-Type: image/jpeg\r\n\r\n" + frame_bytes + b"\r\n"
-        )
-
-
-@app.route("/video_feed")
-def video_feed() -> Response:
-    return Response(gen_frames(), mimetype="multipart/x-mixed-replace; boundary=frame")
-
-
-@app.route("/fotos/<filename>")
-def fotos(filename) -> Response:
-    return send_from_directory("fotos", filename)
-
-
-@app.route("/")
-def index() -> str:
-    workbook = load_workbook(EXCEL_FILE)
-    sheet = workbook.active
-    registros = []
-    for row in sheet.iter_rows(min_row=2, values_only=True):
-        registros.append(row)
-    return render_template("index.html", registros=registros)
+@app.route("/video_feed/<int:cam_index>")
+def video_feed(cam_index):
+    if cam_index >= len(sistema.camaras):
+        return "Cámara no disponible", 404
+    return Response(sistema.video_feed(cam_index), mimetype="multipart/x-mixed-replace; boundary=frame")
 
 
 @app.route("/agregar_miembro", methods=["POST"])
-def agregar_miembro() -> str:
+def agregar_miembro():
     nombre = request.form.get("name")
     rut = request.form.get("rut")
     patente_input = request.form.get("patente")
     vehiculo = request.form.get("vehiculo")
     foto = request.files["foto"]
-    if nombre and rut and foto and patente_input and vehiculo:
-        foto_filename = os.path.join("fotos/", f"{rut}_foto.jpg")
-        foto.save(foto_filename)
-        matriculas_detectadas = detectar_matricula(foto_filename)
-        rutas_matriculas = guardar_matriculas(foto_filename, matriculas_detectadas)
-
-        if rutas_matriculas:
-            matricula = leer_matricula(rutas_matriculas[0])
-            matricula_procesada = limpiar_matricula(matricula)
-            if matricula_procesada == patente_input:
-                hora_entrada = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                workbook = load_workbook(EXCEL_FILE)
-                sheet = workbook.active
-                sheet.append(
-                    [
-                        nombre,
-                        rut,
-                        foto_filename,
-                        matricula_procesada,
-                        hora_entrada,
-                        None,
-                        vehiculo,
-                    ]
-                )
-                workbook.save(EXCEL_FILE)
-                control_motor()
-                print("Comando 'GIRO' enviado al Arduino.")
-                flash("Datos agregados correctamente.", "success")
-                return redirect(url_for("index"))
-            else:
-                flash("La matrícula detectada no coincide con la ingresada.", "error")
-                return redirect(url_for("index"))
-        else:
-            flash("No se detectó ninguna matrícula en la imagen.", "error")
-            return redirect(url_for("index"))
-    else:
-        if os.path.exists(foto_filename):
-            os.remove(foto_filename)
-            print(f"Archivo '{foto_filename}' eliminado.")
-        else:
-            print(f"El archivo '{foto_filename}' no existe.")
-        flash("Faltan datos, por favor complete todos los campos.", "error")
-        return redirect(url_for("index"))
-
-
-@app.route("/editar_miembro/<rut>", methods=["GET", "POST"])
-def editar_miembro(rut) -> str:
-    print(f"Editando miembro con RUT: {rut}")
-    workbook = load_workbook(EXCEL_FILE)
-    sheet = workbook.active
-    if request.method == "POST":
-        nombre = request.form.get("name")
-        patente = request.form.get("patente")
-        vehiculo = request.form.get("vehiculo")
-        print(
-            f"Datos recibidos: nombre={nombre}, patente={patente}, vehiculo={vehiculo}"
-        )
-        for row in sheet.iter_rows(min_row=2):
-            if row[1].value == rut:
-                print(f"Modificando el miembro: {row[0].value} con RUT {rut}")
-                row[0].value = nombre
-                row[3].value = patente
-                row[6].value = vehiculo
-                workbook.save(EXCEL_FILE)
-                return redirect(url_for("index"))
-    else:
-        miembro = None
-        for row in sheet.iter_rows(min_row=2, values_only=True):
-            if row[1] == rut:
-                miembro = row
-                break
-        if miembro is None:
-            print(f"No se encontró miembro con RUT: {rut}")
-        return render_template("editar_miembro.html", miembro=miembro)
-
-
-@app.route("/eliminar_miembro/<rut>", methods=["GET"])
-def eliminar_miembro(rut) -> str:
-    workbook = load_workbook(EXCEL_FILE)
-    sheet = workbook.active
-    ruta = f"fotos/{rut}_foto.jpg"
-    for row in sheet.iter_rows(min_row=2):
-        if row[1].value == rut:
-            sheet.delete_rows(row[0].row)
-            workbook.save(EXCEL_FILE)
-            break
-    if os.path.exists(ruta):
-        os.remove(ruta)
-        print(f"Archivo {ruta} eliminado.")
-    else:
-        print(f"El archivo {ruta} no existe.")
+    sistema.registrar_entrada(nombre, rut, foto, patente_input, vehiculo)
     return redirect(url_for("index"))
 
+@app.route("/sensor/entrada")
+def sensor_entrada():
+    sistema.sensor_entrada()
+    return "Sensor de entrada activado"
 
-@app.route("/capture")
-def capture() -> str:
-    global CAPTURING, LATEST_FRAME
-    CAPTURING = True
-    time.sleep(1)
-    if LATEST_FRAME is not None:
-        cv2.imwrite(f"{UPLOAD_FOLDER}captura.jpg", LATEST_FRAME)
-        print("Imagen capturada.")
-    CAPTURING = False
-    return "Imagen capturada."
+@app.route("/sensor/salida")
+def sensor_salida():
+    sistema.sensor_salida()
+    return "Sensor de salida activado"
 
+@app.route("/registrar_salida/<rut>")
+def registrar_salida(rut):
+    sistema.registrar_salida(rut)
+    return redirect(url_for("index"))
 
-@app.route("/close_camera")
-def close_camera() -> str:
-    CAP.release()
-    print("Cámara cerrada.")
-    return "Cámara cerrada."
-
+@app.route("/")
+def index():
+    registros = sistema.obtener_registros()  
+    cantidad_camaras = len(sistema.camaras)  
+    print(f"Cantidad de cámaras disponibles: {cantidad_camaras}")
+    return render_template("index.html", registros=registros, cantidad_camaras=cantidad_camaras)
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
