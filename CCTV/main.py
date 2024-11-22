@@ -13,7 +13,7 @@ import pytesseract
 class SistemaGestion:
     def __init__(self):
         self.excel_file = "registro_miembros.xlsx"
-        self.upload_folder = "temp/"
+        self.upload_folder = "/home/dante/Documentos/repositorio-git/MVINACAP/CCTV/templates/"
         self.esp32_motor_url = "http://192.168.100.49/motor"
         self.camaras = []
         self.latest_frames = []
@@ -55,9 +55,9 @@ class SistemaGestion:
                     yield b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + buffer.tobytes() + b"\r\n"
             else:
                 yield b"--frame\r\nContent-Type: image/jpeg\r\n\r\n"
-    
+
     def inicializar_camaras(self):
-        for index in range(3):  
+        for index in range(3):  # Intentar abrir hasta 3 cámaras
             cam = cv2.VideoCapture(index)
             if cam.isOpened():
                 self.camaras.append(cam)
@@ -94,8 +94,13 @@ class SistemaGestion:
         return next((re.sub(r"[^A-Za-z0-9]", "", text) for _, text, prob in result if prob > 0.55), "")
 
     def registrar_entrada(self, nombre, rut, foto, patente_input, vehiculo):
-        foto_filename = os.path.join("fotos/", f"{rut}_foto.jpg")
-        foto.save(foto_filename)
+        fotos_folder = os.path.join(self.upload_folder, "fotos")
+        if not os.path.exists(fotos_folder):
+            os.makedirs(fotos_folder)  # Crear la carpeta "fotos" si no existe
+
+        foto_filename = os.path.join(fotos_folder, f"{rut}_foto.jpg")
+        foto.save(foto_filename)  # Guardar la foto en la ubicación especificada
+
         matriculas = self.detectar_matricula(foto_filename)
         if matriculas:
             matricula_procesada = self.leer_matricula(self.guardar_matriculas(foto_filename, matriculas)[0])
@@ -106,6 +111,7 @@ class SistemaGestion:
                 sheet.append([nombre, rut, foto_filename, matricula_procesada, hora_entrada, None, vehiculo])
                 workbook.save(self.excel_file)
                 self.control_motor(1)
+
 
     def registrar_salida(self, rut):
         workbook = load_workbook(self.excel_file)
@@ -128,7 +134,7 @@ class SistemaGestion:
         if os.path.exists(self.excel_file):
             workbook = load_workbook(self.excel_file)
             sheet = workbook.active
-            for row in sheet.iter_rows(min_row=2, values_only=True):  
+            for row in sheet.iter_rows(min_row=2, values_only=True):
                 registros.append(row)
         else:
             print("Advertencia: El archivo de registros no existe.")
@@ -143,7 +149,6 @@ def video_feed(cam_index):
     if cam_index >= len(sistema.camaras):
         return "Cámara no disponible", 404
     return Response(sistema.video_feed(cam_index), mimetype="multipart/x-mixed-replace; boundary=frame")
-
 
 @app.route("/agregar_miembro", methods=["POST"])
 def agregar_miembro():
@@ -169,6 +174,14 @@ def sensor_salida():
 def registrar_salida(rut):
     sistema.registrar_salida(rut)
     return redirect(url_for("index"))
+
+@app.route("/capture/<int:cam_index>")
+def capture(cam_index):
+    filename = sistema.capturar_imagen(cam_index)
+    if filename:
+        return jsonify({"message": "Imagen capturada con éxito", "file": filename}), 200
+    return jsonify({"error": "No se pudo capturar la imagen"}), 500
+
 
 @app.route("/")
 def index():
