@@ -13,7 +13,7 @@ import pytesseract
 class SistemaGestion:
     def __init__(self):
         self.excel_file = "registro_miembros.xlsx"
-        self.upload_folder = "/home/dante/Documentos/repositorio-git/MVINACAP/CCTV/templates/"
+        self.upload_folder = "/home/dante/Documentos/repositorio-git/MVINACAP/CCTV/fotos/"
         self.esp32_motor_url = "http://192.168.100.49/motor"
         self.camaras = []
         self.latest_frames = []
@@ -21,7 +21,6 @@ class SistemaGestion:
         self.reader = easyocr.Reader(["en"])
         self.setup()
 
-    
     def setup(self):
         if not os.path.exists(self.upload_folder):
             os.makedirs(self.upload_folder)
@@ -45,7 +44,15 @@ class SistemaGestion:
             if success:
                 self.latest_frames[cam_index] = frame
 
-    
+    def capturar_imagen(self, cam_index):
+        if cam_index < len(self.camaras):
+            success, frame = self.camaras[cam_index].read()
+            if success:
+                image_path = os.path.join(self.upload_folder, f"captura_camara_{cam_index}_{time.time()}.jpg")
+                cv2.imwrite(image_path, frame)
+                return image_path
+        return None
+
     def video_feed(self, cam_index) -> Generator[bytes, None, None]:
         while True:
             if cam_index < len(self.camaras):
@@ -57,7 +64,8 @@ class SistemaGestion:
                 yield b"--frame\r\nContent-Type: image/jpeg\r\n\r\n"
 
     def inicializar_camaras(self):
-        for index in range(3):  # Intentar abrir hasta 3 cámaras
+        max_camaras = 3
+        for index in range(max_camaras):
             cam = cv2.VideoCapture(index)
             if cam.isOpened():
                 self.camaras.append(cam)
@@ -65,10 +73,12 @@ class SistemaGestion:
                 self.capturing.append(False)
                 print(f"Cámara {index} inicializada correctamente.")
             else:
+                self.camaras.append(None)  
+                self.latest_frames.append(None)
+                self.capturing.append(False)
                 print(f"Advertencia: No se pudo inicializar la cámara {index}. Ignorando...")
-        if not self.camaras:
+        if not any(self.camaras):
             print("No se encontraron cámaras disponibles.")
-
 
     def detectar_matricula(self, imagen):
         img = cv2.imread(imagen)
@@ -96,10 +106,10 @@ class SistemaGestion:
     def registrar_entrada(self, nombre, rut, foto, patente_input, vehiculo):
         fotos_folder = os.path.join(self.upload_folder, "fotos")
         if not os.path.exists(fotos_folder):
-            os.makedirs(fotos_folder)  # Crear la carpeta "fotos" si no existe
+            os.makedirs(fotos_folder)
 
         foto_filename = os.path.join(fotos_folder, f"{rut}_foto.jpg")
-        foto.save(foto_filename)  # Guardar la foto en la ubicación especificada
+        foto.save(foto_filename)
 
         matriculas = self.detectar_matricula(foto_filename)
         if matriculas:
@@ -111,7 +121,6 @@ class SistemaGestion:
                 sheet.append([nombre, rut, foto_filename, matricula_procesada, hora_entrada, None, vehiculo])
                 workbook.save(self.excel_file)
                 self.control_motor(1)
-
 
     def registrar_salida(self, rut):
         workbook = load_workbook(self.excel_file)
@@ -139,7 +148,7 @@ class SistemaGestion:
         else:
             print("Advertencia: El archivo de registros no existe.")
         return registros
-    
+
 app = Flask(__name__)
 app.secret_key = os.urandom(24)
 sistema = SistemaGestion()
@@ -182,13 +191,18 @@ def capture(cam_index):
         return jsonify({"message": "Imagen capturada con éxito", "file": filename}), 200
     return jsonify({"error": "No se pudo capturar la imagen"}), 500
 
-
 @app.route("/")
 def index():
-    registros = sistema.obtener_registros()  
-    cantidad_camaras = len(sistema.camaras)  
+    registros = sistema.obtener_registros()
+    cantidad_camaras = len(sistema.camaras)
+    registros_camaras = [cam is not None for cam in sistema.camaras]
     print(f"Cantidad de cámaras disponibles: {cantidad_camaras}")
-    return render_template("index.html", registros=registros, cantidad_camaras=cantidad_camaras)
+    return render_template(
+        "index.html",
+        registros=registros,
+        cantidad_camaras=cantidad_camaras,
+        registros_camaras=registros_camaras
+    )
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)

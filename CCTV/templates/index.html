@@ -22,37 +22,36 @@
 <body>
     <div class="container">
         <h1>CCTV</h1>
-
-        <!-- Streams de video en vivo -->
         <div>
             <h2>Cámaras en Vivo</h2>
-            {% if cantidad_camaras > 0 %}
-                {% for i in range(cantidad_camaras) %}
-                <div class="camera-container">
-                    <h3>Cámara {{ i }}</h3>
+            {% for i in range(cantidad_camaras) %}
+            <div class="camera-container">
+                <h3>Cámara {{ i }}</h3>
+                {% if registros_camaras[i] %}
                     <img id="video{{ i }}" src="{{ url_for('video_feed', cam_index=i) }}" alt="Cámara {{ i }}">
-                </div>
-                {% endfor %}
-            {% else %}
-                <p>No hay cámaras disponibles.</p>
-            {% endif %}
+                {% else %}
+                    <div class="no-camera">
+                        <p>Cámara no disponible</p>
+                        <div style="background-color: blue; width: 640px; height: 480px;"></div>
+                    </div>
+                {% endif %}
+            </div>
+            {% endfor %}
         </div>
-        
-
-        <!-- Botón para capturar imágenes -->
-        <button onclick="captureImage()">Capturar</button>
         <script>
-            function captureImage() {
-                fetch('/capture')
-                    .then(response => {
-                        if (response.ok) {
-                            alert("Imagen capturada con éxito.");
+            function captureImage(camIndex) {
+                fetch(`/capture/${camIndex}`)
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.message) {
+                            alert(data.message);
                         } else {
-                            alert("Error al capturar la imagen.");
+                            alert(data.error || "Error desconocido al capturar la imagen.");
                         }
                     })
                     .catch(error => {
                         console.error("Error:", error);
+                        alert("No se pudo capturar la imagen.");
                     });
             }
         </script>
