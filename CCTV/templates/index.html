@@ -29,6 +29,7 @@
                 <h3>Cámara {{ i }}</h3>
                 {% if registros_camaras[i] %}
                     <img id="video{{ i }}" src="{{ url_for('video_feed', cam_index=i) }}" alt="Cámara {{ i }}">
+                    <button onclick="captureImage({{ i }})">Capturar Imagen</button>
                 {% else %}
                     <div class="no-camera">
                         <p>Cámara no disponible</p>
@@ -38,6 +39,7 @@
             </div>
             {% endfor %}
         </div>
+
         <script>
             function captureImage(camIndex) {
                 fetch(`/capture/${camIndex}`)
@@ -102,15 +104,15 @@
                 <tr>
                     <td>{{ row[0] }}</td>
                     <td>{{ row[1] }}</td>
-                    <td><img src="/{{ row[2] }}" alt="Foto" class="foto"></td>
+                    <td><img src="{{ url_for('static', filename=row[2]) }}" alt="Foto" class="foto"></td>
                     <td>{{ row[3] }}</td>
                     <td>{{ row[4] }}</td>
                     <td>{{ row[5] }}</td>
                     <td>{{ row[6] }}</td>
                     <td>
-                        <a href="{{ url_for('editar_miembro', rut=row[1]) }}">Editar</a> |
-                        <a href="{{ url_for('eliminar_miembro', rut=row[1]) }}"
-                            onclick="return confirm('¿Está seguro de que desea eliminar este registro?')">Eliminar</a>
+                        <form action="{{ url_for('eliminar_miembro', rut=row[1]) }}" method="POST" style="display: inline;">
+                            <button type="submit" onclick="return confirm('¿Está seguro de que desea eliminar este miembro?')">Eliminar</button>
+                        </form>
                     </td>
                 </tr>
                 {% endfor %}

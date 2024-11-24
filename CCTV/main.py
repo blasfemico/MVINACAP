@@ -2,18 +2,39 @@ import os
 import time
 import re
 from datetime import datetime
-from typing import List, Generator
+from typing import List
 import cv2
 import easyocr
-import requests
 from flask import Flask, render_template, Response, request, redirect, url_for, jsonify, flash
 from openpyxl import Workbook, load_workbook
 import pytesseract
+from pynput import keyboard
+from typing import Tuple
+import logging
+
+logging.basicConfig(
+    level=logging.DEBUG,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    handlers=[
+        logging.StreamHandler()  
+    ]
+)
+
+import logging
+
+
+logging.basicConfig(
+    level=logging.DEBUG,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    handlers=[
+        logging.StreamHandler()  # logs en terminal
+    ]
+)
 
 class SistemaGestion:
     def __init__(self):
         self.excel_file = "registro_miembros.xlsx"
-        self.upload_folder = "/home/dante/Documentos/repositorio-git/MVINACAP/CCTV/fotos/"
+        self.upload_folder = "C:/Users/Darkm/Documents/MVINACAP/CCTV/f_usuario"
         self.esp32_motor_url = "http://192.168.100.49/motor"
         self.camaras = []
         self.latest_frames = []
@@ -22,121 +43,242 @@ class SistemaGestion:
         self.setup()
 
     def setup(self):
+        logging.info("Configurando el sistema...")
         if not os.path.exists(self.upload_folder):
             os.makedirs(self.upload_folder)
+            logging.debug(f"Carpeta de subida creada: {self.upload_folder}")
+        else:
+            logging.debug(f"Carpeta de subida ya existe: {self.upload_folder}")
+
         if not os.path.exists(self.excel_file):
             workbook = Workbook()
             sheet = workbook.active
             sheet.append(["Nombre", "RUT", "Foto", "Patente", "Hora Entrada", "Hora Salida", "Vehiculo"])
             workbook.save(self.excel_file)
+            logging.info(f"Archivo Excel creado: {self.excel_file}")
+        else:
+            logging.info(f"Archivo Excel ya existe: {self.excel_file}")
+        
         pytesseract.pytesseract.tesseract_cmd = (
             "/usr/bin/tesseract" if os.name == "posix" else "C:/Program Files (x86)/Tesseract-OCR/tesseract.exe"
         )
         self.inicializar_camaras()
 
-    def control_motor(self, motor_id):
-        response = requests.get(f"{self.esp32_motor_url}/{motor_id}")
-        response.raise_for_status()
-
-    def capturar_frame(self, cam_index):
-        if cam_index < len(self.camaras) and not self.capturing[cam_index]:
-            success, frame = self.camaras[cam_index].read()
-            if success:
-                self.latest_frames[cam_index] = frame
-
     def capturar_imagen(self, cam_index):
+        logging.info(f"Capturando imagen desde la cámara {cam_index}...")
+        temp_folder = "C:/Users/Darkm/Documents/MVINACAP/CCTV/temp/fotos"
+        if not os.path.exists(temp_folder):
+            os.makedirs(temp_folder)
+            logging.debug(f"Carpeta temporal creada: {temp_folder}")
+
         if cam_index < len(self.camaras):
             success, frame = self.camaras[cam_index].read()
             if success:
-                image_path = os.path.join(self.upload_folder, f"captura_camara_{cam_index}_{time.time()}.jpg")
+                image_path = os.path.join(temp_folder, f"captura_camara_{cam_index}_{time.time()}.jpg")
                 cv2.imwrite(image_path, frame)
+                logging.info(f"Imagen capturada: {image_path}")
+                self.aplicar_filtros(image_path)
                 return image_path
+            else:
+                logging.error(f"Error al capturar imagen desde la cámara {cam_index}")
+        else:
+            logging.warning(f"Cámara {cam_index} no está disponible.")
         return None
+    
+    def aplicar_filtros(self, image_path):
+        logging.info(f"Aplicando filtros a la imagen: {image_path}")
+        img = cv2.imread(image_path)
+        if img is None:
+            logging.error(f"Error: No se pudo abrir la imagen en la ruta especificada: {image_path}")
+            return
 
-    def video_feed(self, cam_index) -> Generator[bytes, None, None]:
-        while True:
-            if cam_index < len(self.camaras):
-                self.capturar_frame(cam_index)
-                if self.latest_frames[cam_index] is not None:
-                    _, buffer = cv2.imencode(".jpg", self.latest_frames[cam_index])
-                    yield b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + buffer.tobytes() + b"\r\n"
-            else:
-                yield b"--frame\r\nContent-Type: image/jpeg\r\n\r\n"
+        output_dir = os.path.join("C:/Users/Darkm/Documents/MVINACAP/CCTV/temp/output")
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
+            logging.debug(f"Directorio de salida creado: {output_dir}")
 
-    def inicializar_camaras(self):
-        max_camaras = 3
-        for index in range(max_camaras):
-            cam = cv2.VideoCapture(index)
-            if cam.isOpened():
-                self.camaras.append(cam)
-                self.latest_frames.append(None)
-                self.capturing.append(False)
-                print(f"Cámara {index} inicializada correctamente.")
-            else:
-                self.camaras.append(None)  
-                self.latest_frames.append(None)
-                self.capturing.append(False)
-                print(f"Advertencia: No se pudo inicializar la cámara {index}. Ignorando...")
-        if not any(self.camaras):
-            print("No se encontraron cámaras disponibles.")
+        try:
+            gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+            blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+            edges = cv2.Canny(blurred, 50, 200)
 
-    def detectar_matricula(self, imagen):
-        img = cv2.imread(imagen)
+            cv2.imwrite(os.path.join(output_dir, "image_gray.jpg"), gray)
+            cv2.imwrite(os.path.join(output_dir, "image_blurred.jpg"), blurred)
+            cv2.imwrite(os.path.join(output_dir, "image_edges.jpg"), edges)
+            logging.info("Filtros aplicados y guardados.")
+        except Exception as e:
+            logging.error(f"Error aplicando filtros: {e}")
+
+    def detectar_matricula(self, image_path) -> List[str]:
+        logging.info(f"Detectando matrícula en la imagen: {image_path}")
+        img = cv2.imread(image_path)
+        if img is None:
+            logging.error(f"Error: No se pudo abrir la imagen en la ruta especificada: {image_path}")
+            return []
+
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
         blurred = cv2.GaussianBlur(gray, (5, 5), 0)
         edges = cv2.Canny(blurred, 50, 150)
         contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        matriculas = [cv2.approxPolyDP(c, 0.02 * cv2.arcLength(c, True), True) for c in contours if cv2.contourArea(c) > 10000]
-        return [m for m in matriculas if len(m) == 4]
 
-    def guardar_matriculas(self, imagen, matriculas):
-        img = cv2.imread(imagen)
-        return [
-            f"{self.upload_folder}matricula_{i + 1}.jpg" 
-            for i, m in enumerate(matriculas)
-            if cv2.imwrite(f"{self.upload_folder}matricula_{i + 1}.jpg", img[cv2.boundingRect(m)[1]:cv2.boundingRect(m)[1] + cv2.boundingRect(m)[3], cv2.boundingRect(m)[0]:cv2.boundingRect(m)[0] + cv2.boundingRect(m)[2]])
-        ]
+        matriculas = []
+        for contour in contours:
+            area = cv2.contourArea(contour)
+            if area > 5000:  
+                peri = cv2.arcLength(contour, True)
+                approx = cv2.approxPolyDP(contour, 0.02 * peri, True)
+                if len(approx) == 4:  
+                    matriculas.append(approx)
+                    logging.debug(f"Posible matrícula detectada con área: {area}")
 
-    def leer_matricula(self, image_path):
-        if not os.path.exists(image_path):
-            return ""
-        result = self.reader.readtext(cv2.cvtColor(cv2.imread(image_path), cv2.COLOR_BGR2RGB))
-        return next((re.sub(r"[^A-Za-z0-9]", "", text) for _, text, prob in result if prob > 0.55), "")
-
-    def registrar_entrada(self, nombre, rut, foto, patente_input, vehiculo):
-        fotos_folder = os.path.join(self.upload_folder, "fotos")
-        if not os.path.exists(fotos_folder):
-            os.makedirs(fotos_folder)
-
-        foto_filename = os.path.join(fotos_folder, f"{rut}_foto.jpg")
-        foto.save(foto_filename)
-
-        matriculas = self.detectar_matricula(foto_filename)
         if matriculas:
-            matricula_procesada = self.leer_matricula(self.guardar_matriculas(foto_filename, matriculas)[0])
-            if matricula_procesada == patente_input:
+            logging.info(f"Se detectaron {len(matriculas)} posibles matrículas.")
+        else:
+            logging.warning("No se detectaron matrículas en la imagen.")
+        return matriculas
+
+    def leer_matricula(self, image_path) -> str:
+        logging.info(f"Intentando leer matrícula en la imagen: {image_path}")
+        if not os.path.exists(image_path):
+            logging.error(f"Error: No se encontró la imagen en la ruta especificada: {image_path}")
+            return ""
+
+        image = cv2.imread(image_path)
+        if image is None:
+            logging.error(f"Error: No se pudo abrir la imagen en la ruta especificada: {image_path}")
+            return ""
+
+        image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        result = self.reader.readtext(image_rgb)
+
+        if not result:
+            logging.warning("No se detectó ningún texto en la imagen.")
+            return ""
+
+        for bbox, text, prob in result:
+            logging.debug(f"Texto detectado: '{text}' con probabilidad: {prob:.2f}")
+            if prob > 0.55:
+                logging.info(f"Matrícula detectada: {text}")
+                return text
+
+        logging.warning("No se detectó ninguna matrícula confiable en la imagen.")
+        return ""
+
+    def verificar_matricula(self, matricula: str) -> Tuple[bool, str]:
+        logging.info(f"Verificando matrícula: {matricula}")
+        workbook = load_workbook(self.excel_file)
+        sheet = workbook.active
+        matriculas_registradas = [row[3].value for row in sheet.iter_rows(min_row=2) if row[3].value]
+
+        for registrada in matriculas_registradas:
+            similitud = self.similitud_matriculas(matricula, registrada)
+            if similitud > 0.8:
+                logging.info(f"Matrícula '{matricula}' coincide con '{registrada}' (Similitud: {similitud:.2f})")
+                return True, registrada
+
+        logging.warning(f"Matrícula '{matricula}' no coincide con ninguna registrada.")
+        return False, None
+
+
+
+    def similitud_matriculas(self, matricula1: str, matricula2: str) -> float:
+        from difflib import SequenceMatcher
+        return SequenceMatcher(None, matricula1, matricula2).ratio()
+
+    def registrar_hora_entrada(self, matricula):
+        hora_entrada = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        workbook = load_workbook(self.excel_file)
+        sheet = workbook.active
+        for row in sheet.iter_rows(min_row=2):
+            if row[3].value == matricula and row[4].value is None:
+                row[4].value = hora_entrada
+                workbook.save(self.excel_file)
+                print(f"Hora de entrada registrada para la matrícula {matricula}: {hora_entrada}.")
+                return
+
+    def procesar_matriculas(self, image_paths: List[str], motor_id: int):
+        for image_path in image_paths:
+            matriculas_detectadas = self.detectar_matricula(image_path)
+            saved_paths = self.guardar_matriculas(image_path, matriculas_detectadas)
+            for saved_path in saved_paths:
+                matricula = self.leer_matricula(saved_path)
+                if matricula:
+                    es_valida, matricula_registrada = self.verificar_matricula(matricula)
+                    if es_valida:
+                        if motor_id == 1:
+                            self.registrar_hora_entrada(matricula_registrada)
+                        elif motor_id == 2:
+                            self.registrar_hora_salida(matricula_registrada)
+                        self.control_motor(motor_id)
+                        print(f"Motor {motor_id} activado para la matrícula {matricula}.")
+                    else:
+                        print(f"No se activó el motor. Matrícula {matricula} no es válida.")
+                else:
+                    print(f"No se pudo leer la matrícula en la imagen: {saved_path}")
+
+    def limpiar_matricula(matricula: str) -> str:
+        matricula_limpia = re.sub(r"[^A-Za-z0-9]", "", matricula)
+        return matricula_limpia
+
+    def agregar_miembro(self, nombre, rut, foto, patente_input, vehiculo):
+        foto_path = os.path.join(self.upload_folder, f"{rut}_foto.jpg")
+        foto.save(foto_path)
+        matriculas_detectadas = self.detectar_matricula(foto_path)
+        rutas_matriculas = self.guardar_matriculas(foto_path, matriculas_detectadas)
+
+        if rutas_matriculas:
+            matricula = self.leer_matricula(rutas_matriculas[0])
+            matricula_limpia = self.limpiar_matricula(matricula)
+            if matricula_limpia == patente_input:
                 hora_entrada = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 workbook = load_workbook(self.excel_file)
                 sheet = workbook.active
-                sheet.append([nombre, rut, foto_filename, matricula_procesada, hora_entrada, None, vehiculo])
+                sheet.append([nombre, rut, foto_path, matricula_limpia, hora_entrada, None, vehiculo])
                 workbook.save(self.excel_file)
-                self.control_motor(1)
+                flash("Miembro agregado exitosamente.", "success")
+            else:
+                flash("La matrícula detectada no coincide con la ingresada.", "error")
+        else:
+            flash("No se detectó ninguna matrícula en la imagen.", "error")
+
 
     def registrar_salida(self, rut):
         workbook = load_workbook(self.excel_file)
         sheet = workbook.active
+        hora_salida = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         for row in sheet.iter_rows(min_row=2):
-            if row[1].value == rut and not row[5].value:
-                row[5].value = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            if row[1].value == rut and row[5].value is None:
+                row[5].value = hora_salida
                 workbook.save(self.excel_file)
-                self.control_motor(2)
-                break
+                flash(f"Salida registrada exitosamente para el miembro con RUT {rut}.")
+                return
 
-    def sensor_entrada(self):
-        self.control_motor(3)
+        flash(f"No se encontró una entrada previa sin salida para el RUT {rut}.")
 
-    def sensor_salida(self):
-        self.control_motor(4)
+    def registrar_teclado(self):
+        def on_press(key):
+            try:
+                if key.char == 'q': 
+                    print("Capturando imágenes desde cámaras 0 y 1 para entrada...")
+                    capturas = self.capturar_imagenes([0, 1])
+                    self.procesar_matriculas(capturas, motor_id=1)
+                elif key.char == 'w':  
+                    print("Capturando imágenes desde cámaras 2 y 3 para salida...")
+                    capturas = self.capturar_imagenes([2, 3])
+                    self.procesar_matriculas(capturas, motor_id=2)
+            except AttributeError:
+                pass
+
+        listener = keyboard.Listener(on_press=on_press)
+        listener.start()
+
+    
+    def activar_motor_entrada(self):
+        self.control_motor(1)  
+
+    def activar_motor_salida(self):
+        self.control_motor(2)  
+        
 
     def obtener_registros(self):
         registros = []
@@ -149,15 +291,36 @@ class SistemaGestion:
             print("Advertencia: El archivo de registros no existe.")
         return registros
 
-app = Flask(__name__)
+app = Flask(__name__, static_url_path='/CCTV', static_folder='C:/Users/Darkm/Documents/MVINACAP/CCTV')
 app.secret_key = os.urandom(24)
 sistema = SistemaGestion()
+sistema.registrar_teclado()
 
 @app.route("/video_feed/<int:cam_index>")
 def video_feed(cam_index):
     if cam_index >= len(sistema.camaras):
         return "Cámara no disponible", 404
     return Response(sistema.video_feed(cam_index), mimetype="multipart/x-mixed-replace; boundary=frame")
+
+@app.route("/eliminar_miembro/<rut>", methods=["POST"])
+def eliminar_miembro(rut):
+    workbook = load_workbook(sistema.excel_file)
+    sheet = workbook.active
+    encontrado = False
+    for row in sheet.iter_rows(min_row=2):
+        if row[1].value == rut:  
+            sheet.delete_rows(row[0].row)
+            encontrado = True
+            break
+
+    if encontrado:
+        workbook.save(sistema.excel_file)
+        flash(f"El miembro con RUT {rut} ha sido eliminado exitosamente.")
+    else:
+        flash(f"No se encontró un miembro con el RUT {rut}.")
+    return redirect(url_for("index"))
+
+
 
 @app.route("/agregar_miembro", methods=["POST"])
 def agregar_miembro():
@@ -166,7 +329,7 @@ def agregar_miembro():
     patente_input = request.form.get("patente")
     vehiculo = request.form.get("vehiculo")
     foto = request.files["foto"]
-    sistema.registrar_entrada(nombre, rut, foto, patente_input, vehiculo)
+    sistema.agregar_miembro(nombre, rut, foto, patente_input, vehiculo)
     return redirect(url_for("index"))
 
 @app.route("/sensor/entrada")
@@ -188,7 +351,7 @@ def registrar_salida(rut):
 def capture(cam_index):
     filename = sistema.capturar_imagen(cam_index)
     if filename:
-        return jsonify({"message": "Imagen capturada con éxito", "file": filename}), 200
+        return jsonify({"message": "Imagen capturada y procesada con éxito", "file": filename}), 200
     return jsonify({"error": "No se pudo capturar la imagen"}), 500
 
 @app.route("/")
