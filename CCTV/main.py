@@ -2,12 +2,14 @@ import os
 import time
 import re
 from datetime import datetime
-from typing import List
+from typing import List, Generator
 import cv2
 import easyocr
+import requests
 from flask import Flask, render_template, Response, request, redirect, url_for, jsonify, flash
 from openpyxl import Workbook, load_workbook
 import pytesseract
+import numpy as np 
 from pynput import keyboard
 from typing import Tuple
 import logging
@@ -20,21 +22,10 @@ logging.basicConfig(
     ]
 )
 
-import logging
-
-
-logging.basicConfig(
-    level=logging.DEBUG,
-    format="%(asctime)s - %(levelname)s - %(message)s",
-    handlers=[
-        logging.StreamHandler()  # logs en terminal
-    ]
-)
-
 class SistemaGestion:
     def __init__(self):
         self.excel_file = "registro_miembros.xlsx"
-        self.upload_folder = "C:/Users/Darkm/Documents/MVINACAP/CCTV/f_usuario"
+        self.upload_folder = "/home/dante/Documentos/repositorio-git/MVINACAP/CCTV/fotos"
         self.esp32_motor_url = "http://192.168.100.49/motor"
         self.camaras = []
         self.latest_frames = []
@@ -64,9 +55,13 @@ class SistemaGestion:
         )
         self.inicializar_camaras()
 
+    def control_motor(self, motor_id):
+        response = requests.get(f"{self.esp32_motor_url}/{motor_id}")
+        response.raise_for_status()
+
     def capturar_imagen(self, cam_index):
         logging.info(f"Capturando imagen desde la cámara {cam_index}...")
-        temp_folder = "C:/Users/Darkm/Documents/MVINACAP/CCTV/temp/fotos"
+        temp_folder = "/home/dante/Documentos/repositorio-git/MVINACAP/temp"
         if not os.path.exists(temp_folder):
             os.makedirs(temp_folder)
             logging.debug(f"Carpeta temporal creada: {temp_folder}")
@@ -92,7 +87,7 @@ class SistemaGestion:
             logging.error(f"Error: No se pudo abrir la imagen en la ruta especificada: {image_path}")
             return
 
-        output_dir = os.path.join("C:/Users/Darkm/Documents/MVINACAP/CCTV/temp/output")
+        output_dir = os.path.join("/home/dante/Documentos/repositorio-git/MVINACAP/temp/output")
         if not os.path.exists(output_dir):
             os.makedirs(output_dir)
             logging.debug(f"Directorio de salida creado: {output_dir}")
@@ -109,6 +104,53 @@ class SistemaGestion:
         except Exception as e:
             logging.error(f"Error aplicando filtros: {e}")
 
+
+    def capturar_frame(self, cam_index):
+        if cam_index < len(self.camaras) and self.camaras[cam_index] is not None:
+            success, frame = self.camaras[cam_index].read()
+            if success:
+                self.latest_frames[cam_index] = frame
+
+    def video_feed(self, cam_index) -> Generator[bytes, None, None]:
+        while True:
+            if cam_index < len(self.camaras) and self.camaras[cam_index] is not None:
+                self.capturar_frame(cam_index)
+                if self.latest_frames[cam_index] is not None:
+                    _, buffer = cv2.imencode(".jpg", self.latest_frames[cam_index])
+                    yield b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + buffer.tobytes() + b"\r\n"
+            else:
+                empty_frame = cv2.imread("fotos/cameraoff.jpg")
+                if empty_frame is None:
+                    empty_frame = self.generar_frame_azul()
+                _, buffer = cv2.imencode(".jpg", empty_frame)
+                yield b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + buffer.tobytes() + b"\r\n"
+                time.sleep(0.1)
+
+    def generar_frame_azul(self):
+        """Genera un frame azul como placeholder."""
+        azul_frame = cv2.imread("fotos/blue_screen.jpg") 
+        if azul_frame is None:
+            azul_frame = 255 * cv2.ones((480, 640, 3), dtype=np.uint8)
+        return azul_frame
+
+
+    def inicializar_camaras(self):
+        max_camaras = 4
+        for index in range(max_camaras):
+            cam = cv2.VideoCapture(index)
+            if cam.isOpened():
+                self.camaras.append(cam)
+                self.latest_frames.append(None)
+                self.capturing.append(False)
+                print(f"Cámara {index} inicializada correctamente.")
+            else:
+                self.camaras.append(None)  
+                self.latest_frames.append(None)
+                self.capturing.append(False)
+                print(f"Advertencia: No se pudo inicializar la cámara {index}. Ignorando...")
+        if not any(self.camaras):
+            print("No se encontraron cámaras disponibles.")
+
     def detectar_matricula(self, image_path) -> List[str]:
         logging.info(f"Detectando matrícula en la imagen: {image_path}")
         img = cv2.imread(image_path)
@@ -124,10 +166,10 @@ class SistemaGestion:
         matriculas = []
         for contour in contours:
             area = cv2.contourArea(contour)
-            if area > 5000:  
+            if area > 5000:  # Reduce el área mínima para capturar más contornos
                 peri = cv2.arcLength(contour, True)
                 approx = cv2.approxPolyDP(contour, 0.02 * peri, True)
-                if len(approx) == 4:  
+                if len(approx) == 4:  # Filtra solo contornos que parecen rectángulos
                     matriculas.append(approx)
                     logging.debug(f"Posible matrícula detectada con área: {area}")
 
@@ -136,6 +178,17 @@ class SistemaGestion:
         else:
             logging.warning("No se detectaron matrículas en la imagen.")
         return matriculas
+
+    def guardar_matriculas(self, image_path, matriculas) -> List[str]:
+        img = cv2.imread(image_path)
+        rutas_matriculas = []
+        for i, matricula in enumerate(matriculas):
+            x, y, w, h = cv2.boundingRect(matricula)
+            matricula_recortada = img[y:y + h, x:x + w]
+            ruta = os.path.join(self.upload_folder, f"matricula_{i+1}.jpg")
+            cv2.imwrite(ruta, matricula_recortada)
+            rutas_matriculas.append(ruta)
+        return rutas_matriculas
 
     def leer_matricula(self, image_path) -> str:
         logging.info(f"Intentando leer matrícula en la imagen: {image_path}")
@@ -164,6 +217,7 @@ class SistemaGestion:
         logging.warning("No se detectó ninguna matrícula confiable en la imagen.")
         return ""
 
+
     def verificar_matricula(self, matricula: str) -> Tuple[bool, str]:
         logging.info(f"Verificando matrícula: {matricula}")
         workbook = load_workbook(self.excel_file)
@@ -178,7 +232,6 @@ class SistemaGestion:
 
         logging.warning(f"Matrícula '{matricula}' no coincide con ninguna registrada.")
         return False, None
-
 
 
     def similitud_matriculas(self, matricula1: str, matricula2: str) -> float:
@@ -291,7 +344,7 @@ class SistemaGestion:
             print("Advertencia: El archivo de registros no existe.")
         return registros
 
-app = Flask(__name__, static_url_path='/CCTV', static_folder='C:/Users/Darkm/Documents/MVINACAP/CCTV')
+app = Flask(__name__, static_url_path='/CCTV', static_folder='/home/dante/Documentos/repositorio-git/MVINACAP/CCTV')
 app.secret_key = os.urandom(24)
 sistema = SistemaGestion()
 sistema.registrar_teclado()
