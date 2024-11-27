@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Control CCTV</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <script>
+        document.addEventListener("DOMContentLoaded", function () {
+            {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    alert("{{ message }}");
+                {% endfor %}
+            {% endif %}
+            {% endwith %}
+        });
+    </script>
+</head>
+
+<body>
+    <div class="container">
+        <h1>CCTV</h1>
+        <div>
+            <h2>Cámaras en Vivo</h2>
+            {% for i in range(cantidad_camaras) %}
+            <div class="camera-container">
+                <h3>Cámara {{ i }}</h3>
+                {% if registros_camaras[i] %}
+                    <img id="video{{ i }}" src="{{ url_for('video_feed', cam_index=i) }}" alt="Cámara {{ i }}">
+                    <button onclick="captureImage({{ i }})">Capturar Imagen</button>
+                {% else %}
+                    <div class="no-camera">
+                        <p>Cámara no disponible</p>
+                        <div style="background-color: blue; width: 640px; height: 480px;"></div>
+                    </div>
+                {% endif %}
+            </div>
+            {% endfor %}
+        </div>
+
+        <script>
+            function captureImage(camIndex) {
+                fetch(`/capture/${camIndex}`)
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.message) {
+                            alert(data.message);
+                        } else {
+                            alert(data.error || "Error desconocido al capturar la imagen.");
+                        }
+                    })
+                    .catch(error => {
+                        console.error("Error:", error);
+                        alert("No se pudo capturar la imagen.");
+                    });
+            }
+        </script>
+
+        <!-- Formulario para agregar miembros al archivo Excel -->
+        <div class="form-container">
+            <h2>Agregar Miembro</h2>
+            <form action="{{ url_for('agregar_miembro') }}" method="POST" enctype="multipart/form-data">
+                <label for="name">Nombre:</label>
+                <input type="text" id="name" name="name" required>
+
+                <label for="rut">RUT (formato: xx.xxx.xxx-x):</label>
+                <input type="text" id="rut" name="rut" pattern="\d{2}\.\d{3}\.\d{3}-\d{1}"
+                    title="Debe seguir el formato xx.xxx.xxx-x" required>
+
+                <label for="foto">Foto:</label>
+                <input type="file" id="foto" name="foto" accept="image/*" required>
+
+                <label for="patente">Patente:</label>
+                <input type="text" id="patente" name="patente" required>
+
+                <label for="vehiculo">Vehículo:</label>
+                <select id="vehiculo" name="vehiculo" required>
+                    <option value="Moto">Moto</option>
+                    <option value="Auto">Auto</option>
+                    <option value="Bicicleta">Bicicleta</option>
+                </select>
+
+                <center><input type="submit" value="Agregar"></center>
+            </form>
+        </div>
+
+        <!-- Tabla para mostrar los registros actuales -->
+        <div class="table-container">
+            <h2>Miembros Registrados</h2>
+            <table>
+                <tr>
+                    <th>Nombre</th>
+                    <th>RUT</th>
+                    <th>Foto</th>
+                    <th>Patente</th>
+                    <th>Hora Entrada</th>
+                    <th>Hora Salida</th>
+                    <th>Vehículo</th>
+                    <th>Acciones</th>
+                </tr>
+                {% for row in registros %}
+                <tr>
+                    <td>{{ row[0] }}</td>
+                    <td>{{ row[1] }}</td>
+                    <td><img src="{{ url_for('static', filename=row[2]) }}" alt="Foto" class="foto"></td>
+                    <td>{{ row[3] }}</td>
+                    <td>{{ row[4] }}</td>
+                    <td>{{ row[5] }}</td>
+                    <td>{{ row[6] }}</td>
+                    <td>
+                        <form action="{{ url_for('eliminar_miembro', rut=row[1]) }}" method="POST" style="display: inline;">
+                            <button type="submit" onclick="return confirm('¿Está seguro de que desea eliminar este miembro?')">Eliminar</button>
+                        </form>
+                    </td>
+                </tr>
+                {% endfor %}
+            </table>
+        </div>
+    </div>
+</body>
+
+</html>
