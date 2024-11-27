@@ -69,17 +69,38 @@ class SistemaGestion:
         if cam_index < len(self.camaras):
             success, frame = self.camaras[cam_index].read()
             if success:
-                image_path = os.path.join(temp_folder, f"captura_camara_{cam_index}_{time.time()}.jpg")
+                image_path = os.path.join(temp_folder, f"captura_camara_{cam_index}_{int(time.time())}.jpg")
                 cv2.imwrite(image_path, frame)
                 logging.info(f"Imagen capturada: {image_path}")
                 self.aplicar_filtros(image_path)
+                matriculas_detectadas = self.detectar_matricula(image_path)
+                if not matriculas_detectadas:
+                    logging.warning("No se detectaron matrículas en la imagen capturada.")
+                    return image_path
+                saved_paths = self.guardar_matriculas(image_path, matriculas_detectadas)
+                if not saved_paths:
+                    logging.warning("No se pudieron guardar las matrículas detectadas.")
+                    return image_path
+
+                for saved_path in saved_paths:
+                    matricula = self.leer_matricula(saved_path)
+                    if not matricula:
+                        logging.warning(f"No se pudo leer ninguna matrícula en la imagen recortada: {saved_path}.")
+                        continue
+                    es_valida, matricula_registrada = self.verificar_matricula(matricula)
+                    if es_valida:
+                        logging.info(f"Matrícula válida detectada: {matricula_registrada}.")
+                        self.registrar_hora_entrada(matricula_registrada)
+                    else:
+                        logging.warning(f"Matrícula {matricula} no válida o no registrada.")
                 return image_path
             else:
                 logging.error(f"Error al capturar imagen desde la cámara {cam_index}")
         else:
             logging.warning(f"Cámara {cam_index} no está disponible.")
         return None
-    
+
+        
     def aplicar_filtros(self, image_path):
         logging.info(f"Aplicando filtros a la imagen: {image_path}")
         img = cv2.imread(image_path)
@@ -166,29 +187,32 @@ class SistemaGestion:
         matriculas = []
         for contour in contours:
             area = cv2.contourArea(contour)
-            if area > 5000:  # Reduce el área mínima para capturar más contornos
+            if area > 5000:  
                 peri = cv2.arcLength(contour, True)
                 approx = cv2.approxPolyDP(contour, 0.02 * peri, True)
-                if len(approx) == 4:  # Filtra solo contornos que parecen rectángulos
+                if len(approx) == 4:  
                     matriculas.append(approx)
                     logging.debug(f"Posible matrícula detectada con área: {area}")
 
-        if matriculas:
-            logging.info(f"Se detectaron {len(matriculas)} posibles matrículas.")
-        else:
+        if not matriculas:
             logging.warning("No se detectaron matrículas en la imagen.")
         return matriculas
 
     def guardar_matriculas(self, image_path, matriculas) -> List[str]:
         img = cv2.imread(image_path)
         rutas_matriculas = []
+        temp_folder = "/home/dante/Documentos/repositorio-git/MVINACAP/temp"
+        if not os.path.exists(temp_folder):
+            os.makedirs(temp_folder)
+            logging.debug(f"Carpeta temporal creada: {temp_folder}")
         for i, matricula in enumerate(matriculas):
             x, y, w, h = cv2.boundingRect(matricula)
             matricula_recortada = img[y:y + h, x:x + w]
-            ruta = os.path.join(self.upload_folder, f"matricula_{i+1}.jpg")
+            ruta = os.path.join(temp_folder, f"matricula_{i+1}.jpg")
             cv2.imwrite(ruta, matricula_recortada)
             rutas_matriculas.append(ruta)
         return rutas_matriculas
+
 
     def leer_matricula(self, image_path) -> str:
         logging.info(f"Intentando leer matrícula en la imagen: {image_path}")
@@ -216,6 +240,7 @@ class SistemaGestion:
 
         logging.warning("No se detectó ninguna matrícula confiable en la imagen.")
         return ""
+
 
 
     def verificar_matricula(self, matricula: str) -> Tuple[bool, str]:
@@ -246,13 +271,27 @@ class SistemaGestion:
             if row[3].value == matricula and row[4].value is None:
                 row[4].value = hora_entrada
                 workbook.save(self.excel_file)
-                print(f"Hora de entrada registrada para la matrícula {matricula}: {hora_entrada}.")
+                logging.info(f"Hora de entrada registrada para la matrícula {matricula}: {hora_entrada}.")
+                #motor 1
+                self.control_motor(1)
+                logging.info(f"Motor 1 activado para la matrícula {matricula}.")
                 return
+        logging.warning(f"No se encontró una fila para registrar la hora de entrada para la matrícula {matricula}.")
+
 
     def procesar_matriculas(self, image_paths: List[str], motor_id: int):
         for image_path in image_paths:
+            logging.info(f"Procesando imagen: {image_path}")
             matriculas_detectadas = self.detectar_matricula(image_path)
+            if not matriculas_detectadas:
+                logging.warning(f"No se detectaron matrículas en la imagen: {image_path}")
+                continue
+
             saved_paths = self.guardar_matriculas(image_path, matriculas_detectadas)
+            if not saved_paths:
+                logging.warning(f"No se generaron imágenes recortadas de matrículas para: {image_path}")
+                continue
+
             for saved_path in saved_paths:
                 matricula = self.leer_matricula(saved_path)
                 if matricula:
@@ -263,11 +302,12 @@ class SistemaGestion:
                         elif motor_id == 2:
                             self.registrar_hora_salida(matricula_registrada)
                         self.control_motor(motor_id)
-                        print(f"Motor {motor_id} activado para la matrícula {matricula}.")
+                        logging.info(f"Motor {motor_id} activado para la matrícula {matricula}.")
                     else:
-                        print(f"No se activó el motor. Matrícula {matricula} no es válida.")
+                        logging.warning(f"No se activó el motor. Matrícula {matricula} no es válida.")
                 else:
-                    print(f"No se pudo leer la matrícula en la imagen: {saved_path}")
+                    logging.warning(f"No se pudo leer ninguna matrícula en la imagen recortada: {saved_path}")
+
 
     def limpiar_matricula(matricula: str) -> str:
         matricula_limpia = re.sub(r"[^A-Za-z0-9]", "", matricula)
@@ -295,18 +335,21 @@ class SistemaGestion:
             flash("No se detectó ninguna matrícula en la imagen.", "error")
 
 
-    def registrar_salida(self, rut):
+    def registrar_hora_salida(self, matricula):
+        hora_salida = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         workbook = load_workbook(self.excel_file)
         sheet = workbook.active
-        hora_salida = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         for row in sheet.iter_rows(min_row=2):
-            if row[1].value == rut and row[5].value is None:
+            if row[3].value == matricula and row[5].value is None:
                 row[5].value = hora_salida
                 workbook.save(self.excel_file)
-                flash(f"Salida registrada exitosamente para el miembro con RUT {rut}.")
+                logging.info(f"Hora de salida registrada para la matrícula {matricula}: {hora_salida}.")
+                #motor 2
+                self.control_motor(2)
+                logging.info(f"Motor 2 activado para la matrícula {matricula}.")
                 return
+        logging.warning(f"No se encontró una fila para registrar la hora de salida para la matrícula {matricula}.")
 
-        flash(f"No se encontró una entrada previa sin salida para el RUT {rut}.")
 
     def registrar_teclado(self):
         def on_press(key):
@@ -421,4 +464,4 @@ def index():
     )
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    app.run(host="0.0.0.0", port=5000)
