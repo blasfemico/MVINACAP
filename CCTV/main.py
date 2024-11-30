@@ -30,7 +30,7 @@ class SistemaGestion:
         self.camaras = []
         self.latest_frames = []
         self.capturing = []
-        self.reader = easyocr.Reader(["en"])
+        self.reader = easyocr.Reader(["en"], gpu=True)
         self.setup()
 
     def setup(self):
