@@ -1,7 +1,0 @@
-Flask
-opencv-python
-easyocr
-openpyxl
-requests
-pytesseract
-pynput

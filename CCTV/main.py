@@ -315,24 +315,19 @@ class SistemaGestion:
 
     def agregar_miembro(self, nombre, rut, foto, patente_input, vehiculo):
         foto_path = os.path.join(self.upload_folder, f"{rut}_foto.jpg")
+        if not os.path.exists(self.upload_folder):
+            os.makedirs(self.upload_folder)
+            logging.debug(f"Carpeta de fotos creada: {self.upload_folder}")
         foto.save(foto_path)
-        matriculas_detectadas = self.detectar_matricula(foto_path)
-        rutas_matriculas = self.guardar_matriculas(foto_path, matriculas_detectadas)
+        logging.info(f"Foto guardada en: {foto_path}")
+        workbook = load_workbook(self.excel_file)
+        sheet = workbook.active
+        sheet.append([nombre, rut, foto_path, patente_input, None, vehiculo])
+        workbook.save(self.excel_file)
+        logging.info(f"Datos del miembro agregados al Excel: Nombre={nombre}, RUT={rut}, Patente={patente_input}, Vehículo={vehiculo}")
+        
+        flash("Miembro agregado exitosamente.", "success")
 
-        if rutas_matriculas:
-            matricula = self.leer_matricula(rutas_matriculas[0])
-            matricula_limpia = self.limpiar_matricula(matricula)
-            if matricula_limpia == patente_input:
-                hora_entrada = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                workbook = load_workbook(self.excel_file)
-                sheet = workbook.active
-                sheet.append([nombre, rut, foto_path, matricula_limpia, hora_entrada, None, vehiculo])
-                workbook.save(self.excel_file)
-                flash("Miembro agregado exitosamente.", "success")
-            else:
-                flash("La matrícula detectada no coincide con la ingresada.", "error")
-        else:
-            flash("No se detectó ninguna matrícula en la imagen.", "error")
 
 
     def registrar_hora_salida(self, matricula):
@@ -420,23 +415,14 @@ def eliminar_miembro(rut):
 
 @app.route("/agregar_miembro", methods=["POST"])
 def agregar_miembro():
-    nombre = request.form.get("name")
-    rut = request.form.get("rut")
-    patente_input = request.form.get("patente")
-    vehiculo = request.form.get("vehiculo")
-    foto = request.files["foto"]
+    nombre = request.form.get("name") 
+    rut = request.form.get("rut") 
+    patente_input = request.form.get("patente")  
+    vehiculo = request.form.get("vehiculo") 
+    foto = request.files["foto"]  
     sistema.agregar_miembro(nombre, rut, foto, patente_input, vehiculo)
     return redirect(url_for("index"))
 
-@app.route("/sensor/entrada")
-def sensor_entrada():
-    sistema.sensor_entrada()
-    return "Sensor de entrada activado"
-
-@app.route("/sensor/salida")
-def sensor_salida():
-    sistema.sensor_salida()
-    return "Sensor de salida activado"
 
 @app.route("/registrar_salida/<rut>")
 def registrar_salida(rut):
