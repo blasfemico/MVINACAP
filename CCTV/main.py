@@ -13,6 +13,7 @@ import numpy as np
 from pynput import keyboard
 from typing import Tuple
 import logging
+import openpyxl
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -34,7 +35,6 @@ class SistemaGestion:
         self.setup()
 
     def setup(self):
-        logging.info("Configurando el sistema...")
         if not os.path.exists(self.upload_folder):
             os.makedirs(self.upload_folder)
             logging.debug(f"Carpeta de subida creada: {self.upload_folder}")
@@ -44,16 +44,16 @@ class SistemaGestion:
         if not os.path.exists(self.excel_file):
             workbook = Workbook()
             sheet = workbook.active
-            sheet.append(["Nombre", "RUT", "Foto", "Patente", "Hora Entrada", "Hora Salida", "Vehiculo"])
+            sheet.append(["Nombre", "RUT", "Foto", "Patente", "Hora Entrada", "Hora Salida", "Rol"])  # Cambio aquí
             workbook.save(self.excel_file)
             logging.info(f"Archivo Excel creado: {self.excel_file}")
         else:
             logging.info(f"Archivo Excel ya existe: {self.excel_file}")
-        
-        pytesseract.pytesseract.tesseract_cmd = (
-            "/usr/bin/tesseract" if os.name == "posix" else "C:/Program Files (x86)/Tesseract-OCR/tesseract.exe"
-        )
-        self.inicializar_camaras()
+            
+            pytesseract.pytesseract.tesseract_cmd = (
+                "/usr/bin/tesseract" if os.name == "posix" else "C:/Program Files (x86)/Tesseract-OCR/tesseract.exe"
+            )
+            self.inicializar_camaras()
 
     def control_motor(self, motor_id):
         response = requests.get(f"{self.esp32_motor_url}/{motor_id}")
@@ -313,18 +313,21 @@ class SistemaGestion:
         matricula_limpia = re.sub(r"[^A-Za-z0-9]", "", matricula)
         return matricula_limpia
 
-    def agregar_miembro(self, nombre, rut, foto, patente_input, vehiculo):
+    def agregar_miembro(self, nombre, rut, foto, patente_input, rol):
         foto_path = os.path.join(self.upload_folder, f"{rut}_foto.jpg")
         if not os.path.exists(self.upload_folder):
             os.makedirs(self.upload_folder)
             logging.debug(f"Carpeta de fotos creada: {self.upload_folder}")
+        
         foto.save(foto_path)
         logging.info(f"Foto guardada en: {foto_path}")
+        
         workbook = load_workbook(self.excel_file)
         sheet = workbook.active
-        sheet.append([nombre, rut, foto_path, patente_input, None, vehiculo])
+        sheet.append([nombre, rut, foto_path, patente_input, "", "", rol])  
+        
         workbook.save(self.excel_file)
-        logging.info(f"Datos del miembro agregados al Excel: Nombre={nombre}, RUT={rut}, Patente={patente_input}, Vehículo={vehiculo}")
+        logging.info(f"Datos del miembro agregados al Excel: Nombre={nombre}, RUT={rut}, Patente={patente_input}, Rol={rol}")
         
         flash("Miembro agregado exitosamente.", "success")
 
@@ -412,15 +415,15 @@ def eliminar_miembro(rut):
     return redirect(url_for("index"))
 
 
-
 @app.route("/agregar_miembro", methods=["POST"])
 def agregar_miembro():
     nombre = request.form.get("name") 
     rut = request.form.get("rut") 
     patente_input = request.form.get("patente")  
-    vehiculo = request.form.get("vehiculo") 
-    foto = request.files["foto"]  
-    sistema.agregar_miembro(nombre, rut, foto, patente_input, vehiculo)
+    rol = request.form.get("rol") 
+    foto = request.files["foto"]
+    
+    sistema.agregar_miembro(nombre, rut, foto, patente_input, rol)  
     return redirect(url_for("index"))
 
 
@@ -438,7 +441,12 @@ def capture(cam_index):
 
 @app.route("/")
 def index():
-    registros = sistema.obtener_registros()
+    registros = []
+    workbook = load_workbook(sistema.excel_file)
+    sheet = workbook.active
+    for row in sheet.iter_rows(min_row=2, values_only=True):  
+        registros.append(row)
+
     cantidad_camaras = len(sistema.camaras)
     registros_camaras = [cam is not None for cam in sistema.camaras]
     print(f"Cantidad de cámaras disponibles: {cantidad_camaras}")
