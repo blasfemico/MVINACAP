@@ -306,11 +306,15 @@ class SistemaGestion:
         return matricula_limpia
 
     def agregar_miembro(self, nombre, rut, foto, patente_input, rol):
-        foto_path = os.path.join(self.upload_folder, f"{rut}_foto.jpg")
+        foto_path = os.path.join('CCTV', 'fotos', f"{rut.replace('.', '')}/{rut}_foto.jpg")
+        print(foto_path)
         if not os.path.exists(self.upload_folder):
             os.makedirs(self.upload_folder)
             logging.debug(f"Carpeta de fotos creada: {self.upload_folder}")
+        if not os.path.exists(os.path.join(self.upload_folder, rut.replace('.', ''))):
+            os.makedirs(os.path.join(self.upload_folder, rut.replace('.', '')))
         
+        print(foto_path)
         foto.save(foto_path)
         logging.info(f"Foto guardada en: {foto_path}")
         
@@ -323,7 +327,23 @@ class SistemaGestion:
         
         flash("Miembro agregado exitosamente.", "success")
 
-
+    def obtener_miembro(self, rut):
+        workbook = load_workbook(self.excel_file)
+        sheet = workbook.active
+        for row in sheet.iter_rows(min_row=2):
+            if row[1].value == rut:
+                return row
+        return None
+    
+    def obtener_miembro_por_id(self, id):
+        workbook = load_workbook(self.excel_file)
+        sheet = workbook.active
+        for c, row in enumerate(sheet.iter_rows(min_row=2)):
+            #print(c)
+            print(row[0].value)
+            if c == id:
+                return row
+        return None
 
     def registrar_hora_salida(self, matricula):
         hora_salida = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
