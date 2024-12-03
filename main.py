@@ -75,7 +75,9 @@ def eliminar_miembro(rut):
     encontrado = False
     miembro = sistema.obtener_miembro(rut)
     try:
-        os.remove(miembro[2].value)
+        folder_path_to_delete = os.path.join("CCTV/fotos", miembro[1].value.replace(".", ""))
+        for file in os.listdir(folder_path_to_delete):
+            os.remove(os.path.join(folder_path_to_delete, file))
     except:
         pass
     for row in sheet.iter_rows(min_row=2):
@@ -187,35 +189,39 @@ def recognition(rut: int):
     info = sistema.obtener_miembro(rut)
     return {'photo_path': info}
 
-def capture_by_frames(): 
+def capture_by_frames(cam_index): 
     global cam
-    cam = cv2.VideoCapture(0)
+    cam = cv2.VideoCapture(cam_index)
+
+    # SI CAM INDEX ES 0 o 1, SERÁ PARA RECONOCIMIENTO
     while True:
         try:
             ret, img = cam.read()
-            img = cv2.flip(img, 1) # 1 Stright 0 Reverse
-            img = cv2.resize(img, (400, 400))
-            gray = cv2.cvtColor(img,cv2.COLOR_BGR2GRAY)
-            detector=cv2.CascadeClassifier(cascadePath)
-            faces=detector.detectMultiScale(img,1.2,6)
-            for(x,y,w,h) in faces:
-                cv2.rectangle(img, (x,y), (x+w,y+h), (0,255,0), 2)
-                id, confidence = recognizer.predict(gray[y:y+h,x:x+w])       
+            if cam_index == 0 or cam_index == 1:
+                img = cv2.flip(img, 1) # 1 Stright 0 Reverse
+                img = cv2.resize(img, (400, 400))
+                gray = cv2.cvtColor(img,cv2.COLOR_BGR2GRAY)
+                detector=cv2.CascadeClassifier(cascadePath)
+                faces=detector.detectMultiScale(img,1.2,6)
+                for(x,y,w,h) in faces:
+                    cv2.rectangle(img, (x,y), (x+w,y+h), (0,255,0), 2)
+                    id, confidence = recognizer.predict(gray[y:y+h,x:x+w])       
 
-                if (confidence < 100):
-                    miembro = sistema.obtener_miembro(id, True)
-                    id = miembro[0].value
-                    confidence = "  {0}%".format(round(confidence))
-                else:
-                    id = "Unknown"
-                    confidence = "  {0}%".format(round(confidence))
-                p_count = photos_count()
-                if p_count != 0:
-                    cv2.putText(img,f'{str(id)} {confidence}',(x+5,y-5),font,1,(255,255,255),2)
-                else:
-                    cv2.putText(img,str('No Users Found'),(x+5,y-5),font,1,(255,255,255),2)
+                    if (confidence < 100):
+                        miembro = sistema.obtener_miembro(id, True)
+                        id = miembro[0].value
+                        confidence = "  {0}%".format(round(confidence))
+                    else:
+                        id = "Unknown"
+                        confidence = "  {0}%".format(round(confidence))
+                    p_count = photos_count()
+                    if p_count != 0:
+                        cv2.putText(img,f'{str(id)} {confidence}',(x+5,y-5),font,1,(255,255,255),2)
+                    else:
+                        cv2.putText(img,str('No Users Found'),(x+5,y-5),font,1,(255,255,255),2)
 
-                #cv2.putText(img,str(confidence),(x+5,y+h),font,1,(255,255,0),1)
+                    #cv2.putText(img,str(confidence),(x+5,y+h),font,1,(255,255,0),1)
+            
             ret1, buffer = cv2.imencode('.jpg', img)
             frame = buffer.tobytes()
             
@@ -227,9 +233,10 @@ def capture_by_frames():
             break
 
 
-@app.route('/video_capture_face')
-def video_capture_face():
-    return Response(capture_by_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
+@app.route('/video_capture_pro/<int:cam_index>')
+def video_capture_pro(cam_index):
+    print("CAM INDEX: ", cam_index)
+    return Response(capture_by_frames(cam_index = cam_index), mimetype='multipart/x-mixed-replace; boundary=frame')
 
 @app.route('/start',methods=['POST'])
 def start():

@@ -156,15 +156,6 @@
 </head>
 
 <body>
-    <div class="col-lg-offset-2 col-lg-8">
-        <div class="col-lg-offset-2 col-lg-8">
-            <img src="{{ url_for('video_capture_face') }}" width="100%">
-        </div>
-        <div class="capture-btn-container">
-            <button onclick="captureFaceImage()">Reconocer Cara</button>
-            <span id="face_result">NINGUNA CARA SE HA ESCANEADO</span>
-        </div>
-    </div>
 
     <div class="container">
         <h1>CCTV</h1>
@@ -179,10 +170,21 @@
                     <div class="camera-container">
                         <h3>Cámara {{ i }}</h3>
                         {% if registros_camaras[i] %}
-                        <img id="video{{ i }}" src="{{ url_for('video_feed', cam_index=i) }}" alt="Cámara {{ i }}">
+                        <img id="video{{ i }}" src="{{ url_for('video_capture_pro', cam_index = i) }}" alt="Cámara {{ i }}">
                         {% if i < 2 or i >= cantidad_camaras - 2 %}
                         <div class="capture-btn-container">
-                            <button onclick="captureImage('{{ i }}')">Capturar Imagen</button>
+                            
+                            {% if i == 0 or i == 1 %}
+
+                                <button onclick="captureFaceImage()">Reconocer Cara</button>
+                                <span id="face_result">NINGUNA CARA SE HA ESCANEADO</span>
+                            
+                            {% else  %}
+
+                                <button onclick="captureImage('{{ i }}')">Capturar Imagen</button>
+
+                            {% endif %}
+
                         </div>
                         {% endif %}
                         {% else %}
