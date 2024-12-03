@@ -36,11 +36,16 @@ def train(recognizer):
     print("{0} faces trained.".format(len(np.unique(ids))))
 
 recognizer = cv2.face.LBPHFaceRecognizer.create()
-#train(recognizer)
-recognizer.read('trainer.yml')
-cascadePath = "CCTV/Cascades/haarcascade_frontalface_default.xml"
-faceCascade = cv2.CascadeClassifier(cascadePath)
-font = cv2.FONT_HERSHEY_SIMPLEX
+
+try:
+    recognizer.read('trainer.yml')
+    cascadePath = "CCTV/Cascades/haarcascade_frontalface_default.xml"
+    faceCascade = cv2.CascadeClassifier(cascadePath)
+    font = cv2.FONT_HERSHEY_SIMPLEX
+except:
+    pass
+
+
 
 logging.basicConfig(
     level=logging.DEBUG,
