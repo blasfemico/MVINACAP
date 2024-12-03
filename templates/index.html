@@ -175,8 +175,8 @@
                         <div class="capture-btn-container">
                             
                             {% if i == 0 or i == 1 %}
-
-                                <button onclick="captureFaceImage()">Reconocer Cara</button>
+                                <button onclick="captureQrImage()" id="qrbutton">(❌) Escanear QR</button>
+                                <button onclick="captureFaceImage()" id="facebutton">(❌) Reconocer Cara</button>
                                 <span id="face_result">NINGUNA CARA SE HA ESCANEADO</span>
                             
                             {% else  %}
@@ -225,6 +225,7 @@
         </div>
     </div>
     
+    <button onclick="startTrainging()" id="trainButton">Start Trainging</button>
   
     <div class="table-container">
         <h2>Miembros Registrados</h2>
@@ -260,6 +261,29 @@
 
 
     <script>
+        var face = false;
+        const facebutton = document.getElementById('facebutton');
+        var qr = false;
+        const qrbutton = document.getElementById('qrbutton');
+
+        function startTrainging() {
+            var train_button = document.getElementById('trainButton');
+            train_button.innerText = 'Training...';
+            fetch('/train_test')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status) {
+                        train_button.innerText = 'Training completed';
+                    } else {
+                        train_button.innerText = 'Error in the training process';
+                    }
+                })
+                .catch(error => {
+                    console.error("Error:", error);
+                    train_button.innerText = 'Error in the training process';
+                });
+        }
+
         document.addEventListener("DOMContentLoaded", function () {
             {% with messages = get_flashed_messages(with_categories=true) %}
             {% if messages %}
@@ -294,6 +318,54 @@
             console.log(data)
             const faceResult = document.getElementById('face_result');
             faceResult.innerText = 'Nombre: ' + data.name + ' - RUT: ' + data.rut + ' - Rol: ' + data.rol;
+            if (data.rut != 'Unknown'){
+                facebutton.innerText = '(✔) Cara Reconocida';
+                face = true;
+            } else {
+                facebutton.innerText = '(❌) Reconocer Cara';
+                face = false;
+            }
+            await startEngine(3) // TRES ES PARA TESTEO, poner uno o dos según corresponda.
+        }
+
+        async function captureQrImage() {
+            const response = await fetch('/capture_qr');
+            const data = await response.json();
+            console.log(data)
+            const faceResult = document.getElementById('face_result');
+            faceResult.innerText = 'scan: ' + data.qr_content.qr_content;
+            
+            if (data.qr_content.qr_content != 'error'){
+                qrbutton.innerText = '(✔) QR Escaneado';
+                qr = true;
+            } else {
+                qrbutton.innerText = '(❌) Escanear QR';
+                qr = false;
+            }
+            await startEngine(3) // TRES ES PARA TESTEO, poner uno o dos según corresponda.
+        }
+
+
+        async function startEngine(engine_num) {
+            console.log(face, qr)
+            if (face && qr){
+
+                const response = await fetch('/start_engine/' + engine_num)
+                const data = await response.json();
+                console.log(data)
+
+                qrbutton.innerText = '(❌) Escanear QR';
+                facebutton.innerText = '(❌) Reconocer Cara';
+                face = false
+                qr = false
+
+                const faceResult = document.getElementById('face_result');
+                faceResult.innerText = 'PUERTA ABIERTA (para debug, saca esto luego xd xd)'
+
+
+            } else {
+                alerts('Debe ecanear una cara y un QR para iniciar el motor')
+            }
         }
     </script>
 </body>

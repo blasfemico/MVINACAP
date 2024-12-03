@@ -18,7 +18,7 @@ import logging
 import openpyxl
 from CCTV.sistema_gestion import SistemaGestion
 from CCTV.trainer import getImagesAndLabels
-
+from qreader import QReader
 
 
 def photos_count():
@@ -65,7 +65,7 @@ sistema.registrar_teclado()
 @app.route("/train_test")
 def train_test():
     train(recognizer)
-    return "Training completed"
+    return {'status': "Training completed"}
 
 @app.route("/video_feed/<int:cam_index>")
 def video_feed(cam_index):
@@ -235,7 +235,7 @@ def capture_by_frames(cam_index):
                 b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
         except Exception as e:
             cam.release()
-            break
+            #break
 
 
 @app.route('/video_capture_pro/<int:cam_index>')
@@ -293,6 +293,27 @@ def capture_frame():
         cam.release()
         print(e)
         return {'id': 'Unknown', 'confidence': '0%'}
+    
+
+def capture_frame_qr(): 
+    try:
+        qreader = QReader()
+        ret, img = cam.read()
+        img = cv2.flip(img, 1) # 1 Stright 0 Reverse
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        
+        decoded_text = qreader.detect_and_decode(image=img)
+        
+        if decoded_text:
+            return {'qr_content': str(decoded_text[0])}
+        else:
+            return {'qr_content': 'error'}
+    except Exception as e:
+        cam.release()
+        print(e)
+        return {'qr_content': 'error'}
+
+
 
 
 @app.route("/capture_face")
@@ -302,6 +323,26 @@ def capture_face():
         miembro = sistema.obtener_miembro(predict['id'], True)
         return {'predict': predict, 'name': miembro[0].value, 'patente': miembro[3].value, 'rol': miembro[6].value, 'rut': miembro[1].value}
     return {'status': 'error'}
+
+
+
+@app.route("/capture_qr")
+def capture_qr():
+    qr_content  = capture_frame_qr()
+    if qr_content:
+        return {'qr_content': qr_content}
+    return {'status': 'error'}
+
+
+
+@app.route("/start_engine/<int:motor_num>")
+def start_engine(motor_num):
+    if motor_num == '1':
+        sistema.control_motor(1)
+    elif motor_num == '2':
+        sistema.control_motor(2)
+    
+    return {'status': 'ok'}
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)

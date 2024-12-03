@@ -6,3 +6,4 @@ requests
 pytesseract
 pynput
 opencv_contrib_python
+qreader
