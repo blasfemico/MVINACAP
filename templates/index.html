@@ -162,6 +162,7 @@
         </div>
         <div class="capture-btn-container">
             <button onclick="captureFaceImage()">Reconocer Cara</button>
+            <span id="face_result">NINGUNA CARA SE HA ESCANEADO</span>
         </div>
     </div>
 
@@ -289,6 +290,8 @@
             const response = await fetch('/capture_face');
             const data = await response.json();
             console.log(data)
+            const faceResult = document.getElementById('face_result');
+            faceResult.innerText = 'Nombre: ' + data.name + ' - RUT: ' + data.rut + ' - Rol: ' + data.rol;
         }
     </script>
 </body>

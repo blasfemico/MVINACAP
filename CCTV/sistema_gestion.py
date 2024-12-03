@@ -327,12 +327,16 @@ class SistemaGestion:
         
         flash("Miembro agregado exitosamente.", "success")
 
-    def obtener_miembro(self, rut):
+    def obtener_miembro(self, rut, rut_fixed: bool = False):
         workbook = load_workbook(self.excel_file)
         sheet = workbook.active
         for row in sheet.iter_rows(min_row=2):
-            if row[1].value == rut:
-                return row
+            if not rut_fixed:
+                if row[1].value == rut:
+                    return row
+            else:
+                if str(row[1].value.replace('.', '').replace('-', '')) == str(rut):
+                    return row
         return None
     
     def obtener_miembro_por_id(self, id):

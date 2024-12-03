@@ -202,10 +202,9 @@ def capture_by_frames():
                 cv2.rectangle(img, (x,y), (x+w,y+h), (0,255,0), 2)
                 id, confidence = recognizer.predict(gray[y:y+h,x:x+w])       
 
-                #print(id, confidence)
                 if (confidence < 100):
-                    # miembro = sistema.obtener_miembro_por_id(id)
-                    id = id
+                    miembro = sistema.obtener_miembro(id, True)
+                    id = miembro[0].value
                     confidence = "  {0}%".format(round(confidence))
                 else:
                     id = "Unknown"
@@ -287,8 +286,10 @@ def capture_frame():
 @app.route("/capture_face")
 def capture_face():
     predict = capture_frame()
-    print(predict)
-    return {'predict': predict}
+    if predict['id'] != 'Unknown':
+        miembro = sistema.obtener_miembro(predict['id'], True)
+        return {'predict': predict, 'name': miembro[0].value, 'patente': miembro[3].value, 'rol': miembro[6].value, 'rut': miembro[1].value}
+    return {'status': 'error'}
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
