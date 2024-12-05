@@ -196,9 +196,9 @@ def recognition(rut: int):
 
 def capture_by_frames(cam_index): 
     global cam
-    cam = cv2.VideoCapture(cam_index)
+    cam = cv2.VideoCapture(0)
 
-    # SI CAM INDEX ES 0 o 1, SERÁ PARA RECONOCIMIENTO
+    # SI CAM INDEX ES 0 o 1, SERÁ PARA RECONOCIMIENTO DEL QR Y FACIAL
     while True:
         try:
             ret, img = cam.read()
@@ -210,7 +210,7 @@ def capture_by_frames(cam_index):
                 faces=detector.detectMultiScale(img,1.2,6)
                 for(x,y,w,h) in faces:
                     cv2.rectangle(img, (x,y), (x+w,y+h), (0,255,0), 2)
-                    id, confidence = recognizer.predict(gray[y:y+h,x:x+w])       
+                    id, confidence = recognizer.predict(gray[y:y+h,x:x+w])
 
                     if (confidence < 100):
                         miembro = sistema.obtener_miembro(id, True)
@@ -277,6 +277,15 @@ def capture_frame():
         for(x,y,w,h) in faces:
             cv2.rectangle(img, (x,y), (x+w,y+h), (0,255,0), 2)
             id, confidence = recognizer.predict(gray[y:y+h,x:x+w])
+
+            miembro = sistema.obtener_miembro(id, True)
+
+            USER_RUT = miembro[1].value
+            ROL = miembro[6].value
+            PATENTE = miembro[3].value
+            
+            sistema.procesar_matriculas(USER_RUT)
+
             if (confidence < 100):
                 p_count = photos_count()
                 if p_count != 0:
@@ -321,6 +330,10 @@ def capture_face():
     predict = capture_frame()
     if predict['id'] != 'Unknown':
         miembro = sistema.obtener_miembro(predict['id'], True)
+
+        capturas = sistema.capturar_imagenes([0, 1])
+        sistema.procesar_matriculas(capturas, motor_id=1)
+
         return {'predict': predict, 'name': miembro[0].value, 'patente': miembro[3].value, 'rol': miembro[6].value, 'rut': miembro[1].value}
     return {'status': 'error'}
 
@@ -341,6 +354,8 @@ def start_engine(motor_num):
         sistema.control_motor(1)
     elif motor_num == '2':
         sistema.control_motor(2)
+    else:
+        pass
     
     return {'status': 'ok'}
 

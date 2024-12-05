@@ -48,6 +48,7 @@ class SistemaGestion:
             self.inicializar_camaras()
 
     def control_motor(self, motor_id):
+        print(f"Activando motor {motor_id}...")
         response = requests.get(f"{self.esp32_motor_url}/{motor_id}")
         response.raise_for_status()
 

@@ -325,7 +325,7 @@
                 facebutton.innerText = '(❌) Reconocer Cara';
                 face = false;
             }
-            await startEngine(3) // TRES ES PARA TESTEO, poner uno o dos según corresponda.
+            await startEngine(2) // TRES ES PARA TESTEO, poner uno o dos según corresponda.
         }
 
         async function captureQrImage() {
@@ -342,7 +342,7 @@
                 qrbutton.innerText = '(❌) Escanear QR';
                 qr = false;
             }
-            await startEngine(3) // TRES ES PARA TESTEO, poner uno o dos según corresponda.
+            await startEngine(1) // TRES ES PARA TESTEO, poner uno o dos según corresponda.
         }
 
 
@@ -361,7 +361,8 @@
 
                 const faceResult = document.getElementById('face_result');
                 faceResult.innerText = 'PUERTA ABIERTA (para debug, saca esto luego xd xd)'
-
+                
+                console.log('Engine started: ' + engine_num)
 
             } else {
                 alerts('Debe ecanear una cara y un QR para iniciar el motor')
