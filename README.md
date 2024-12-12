@@ -35,21 +35,6 @@ brew install zbar
 1. Descargue ZBar desde [ZBar project](http://zbar.sourceforge.net/download.html).
 2. Asegúrese de que el archivo descargado esté accesible desde las variables de entorno del sistema.
 
-### Verificación de ZBar
-
-Después de instalar ZBar, pruebe la siguiente configuración:
-
-```python
-from pyzbar.pyzbar import decode
-from PIL import Image
-
-img = Image.open('example_qr_code.png')  # Usa una imagen de prueba
-decoded_objects = decode(img)
-print(decoded_objects)
-```
-
-Si no se genera ningún error, ZBar está configurado correctamente.
-
 ## Instalación
 
 ### Paso 1: Clonar el repositorio
