@@ -7,7 +7,7 @@ El sistema incluye:
 - Detección y reconocimiento facial.
 - Verificación de matrículas y códigos QR.
 - Activación automática de motores de entrada/salida según validaciones exitosas.
-- Gestín de datos mediante una interfaz web y archivos Excel.
+- Gestión de datos mediante una interfaz web y archivos Excel.
 
 ## Requisitos
 
@@ -16,6 +16,39 @@ El sistema incluye:
 3. **Dependencias**: Listadas en `requirements.txt`.
 4. **Software adicional**:
    - `Tesseract OCR` (debe estar instalado y configurado).
+   - `ZBar` (para escaneo de códigos QR).
+
+### Instalación de ZBar
+
+#### En sistemas Linux (Ubuntu/Debian):
+```bash
+sudo apt-get update
+sudo apt-get install libzbar0
+```
+
+#### En macOS:
+```bash
+brew install zbar
+```
+
+#### En Windows:
+1. Descargue ZBar desde [ZBar project](http://zbar.sourceforge.net/download.html).
+2. Asegúrese de que el archivo descargado esté accesible desde las variables de entorno del sistema.
+
+### Verificación de ZBar
+
+Después de instalar ZBar, pruebe la siguiente configuración:
+
+```python
+from pyzbar.pyzbar import decode
+from PIL import Image
+
+img = Image.open('example_qr_code.png')  # Usa una imagen de prueba
+decoded_objects = decode(img)
+print(decoded_objects)
+```
+
+Si no se genera ningún error, ZBar está configurado correctamente.
 
 ## Instalación
 
@@ -125,4 +158,5 @@ Confirme que se crea el archivo `trainer.yml` y que los rostros registrados se r
 - Mantenga respaldos de los datos de `registro_miembros.xlsx` para evitar pérdidas.
 
 Este documento puede ser ampliado según nuevas funcionalidades o necesidades.
+
 
